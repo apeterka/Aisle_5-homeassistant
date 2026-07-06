@@ -6,13 +6,11 @@ import hmac
 import logging
 
 from aiohttp import web
-from homeassistant import config_entries
 from homeassistant.components import webhook
 from homeassistant.components.zone import DOMAIN as ZONE_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import slugify
 
@@ -74,18 +72,22 @@ async def _async_ensure_zones(
 ) -> None:
     """Creates or updates one HA zone per store that has coordinates.
 
-    Reuses the zone integration's own schema-based config flow (the same one
-    behind Settings > Areas & Zones > Add Zone) instead of writing to the
-    entity registry directly, so zones stay fully native/editable. Zone's
-    config flow only defines a "user" step (no "import" step); passing the
-    full data set on init still skips the interactive form as long as it
-    validates against the zone schema.
+    Zones (like input_boolean, counter, person, ...) are managed through
+    Home Assistant's Storage Collection helper, not through config_entries/
+    config_flow - that's what the "Add Zone" button in Settings actually
+    calls under the hood. hass.data[ZONE_DOMAIN] holds that collection once
+    the zone integration has set itself up.
 
-    The entry_id of each zone we create is tracked in our own config entry's
-    data (CONF_ZONE_ENTRIES), so a later sync (e.g. after the radius option
-    changes, or a store's coordinates change) updates the existing zone in
-    place instead of only ever creating it once.
+    The collection item id of each zone we create is tracked in our own
+    config entry's data (CONF_ZONE_ENTRIES), so a later sync (e.g. after the
+    radius option changes, or a store's coordinates change) updates the
+    existing zone in place instead of only ever creating it once.
     """
+    zone_collection = hass.data.get(ZONE_DOMAIN)
+    if zone_collection is None:
+        _LOGGER.warning("Zone storage collection not available yet - skipping zone sync")
+        return
+
     radius = entry.options.get(CONF_ZONE_RADIUS, DEFAULT_ZONE_RADIUS)
     zone_entries: dict[str, str] = dict(entry.data.get(CONF_ZONE_ENTRIES, {}))
     changed = False
@@ -112,16 +114,13 @@ async def _async_ensure_zones(
             "passive": False,
         }
 
-        tracked_entry_id = zone_entries.get(store_key)
-        zone_entry = (
-            hass.config_entries.async_get_entry(tracked_entry_id) if tracked_entry_id else None
-        )
+        tracked_item_id = zone_entries.get(store_key)
 
         try:
-            if zone_entry is not None:
-                if zone_entry.data != zone_data:
-                    hass.config_entries.async_update_entry(zone_entry, data=zone_data)
-                    await hass.config_entries.async_reload(zone_entry.entry_id)
+            if tracked_item_id is not None and tracked_item_id in zone_collection.data:
+                existing = zone_collection.data[tracked_item_id]
+                if any(existing.get(key) != value for key, value in zone_data.items()):
+                    await zone_collection.async_update_item(tracked_item_id, zone_data)
                     _LOGGER.debug("Updated existing zone for store '%s'", store["name"])
                 continue
 
@@ -136,32 +135,16 @@ async def _async_ensure_zones(
                 )
                 continue
 
-            result = await hass.config_entries.flow.async_init(
-                ZONE_DOMAIN,
-                context={"source": config_entries.SOURCE_USER},
-                data=zone_data,
-            )
-            if result.get("type") == FlowResultType.CREATE_ENTRY:
-                zone_entries[store_key] = result["result"].entry_id
-                changed = True
-                _LOGGER.debug("Created zone for store '%s'", store["name"])
-            else:
-                _LOGGER.warning(
-                    "Zone creation for store '%s' did not complete as expected "
-                    "(flow result type: %s, reason/errors: %s) - no zone was created",
-                    store["name"],
-                    result.get("type"),
-                    result.get("reason") or result.get("errors"),
-                )
+            new_item = await zone_collection.async_create_item(zone_data)
+            zone_entries[store_key] = new_item["id"]
+            changed = True
+            _LOGGER.debug("Created zone for store '%s'", store["name"])
         except Exception as err:  # noqa: BLE001 - a single bad store must not block setup
             _LOGGER.warning(
                 "Could not create/update zone for store '%s': %s", store["name"], err
             )
 
     if changed:
-        # Triggers our own update listener (_async_reload_entry) once more, causing
-        # a single extra reload right after setup - harmless, since the second pass
-        # finds every store already tracked and does nothing further.
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, CONF_ZONE_ENTRIES: zone_entries}
         )
