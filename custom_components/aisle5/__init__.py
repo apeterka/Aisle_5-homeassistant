@@ -148,10 +148,10 @@ async def _async_ensure_zones(
             else:
                 _LOGGER.warning(
                     "Zone creation for store '%s' did not complete as expected "
-                    "(flow result type: %s, errors: %s) - no zone was created",
+                    "(flow result type: %s, reason/errors: %s) - no zone was created",
                     store["name"],
                     result.get("type"),
-                    result.get("errors"),
+                    result.get("reason") or result.get("errors"),
                 )
         except Exception as err:  # noqa: BLE001 - a single bad store must not block setup
             _LOGGER.warning(
