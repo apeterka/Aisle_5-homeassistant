@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.util import slugify
 
 from .api import Aisle5ApiError, Aisle5Client
@@ -159,7 +160,21 @@ async def _async_setup_webhook(
 
     if not webhook_id:
         webhook_id = webhook.async_generate_id()
-        webhook_url = webhook.async_generate_url(hass, webhook_id)
+        try:
+            # Prefer the externally configured URL: the Aisle 5 backend is
+            # commonly hosted elsewhere (its own server/VM), not necessarily
+            # on the same LAN as Home Assistant, so the default internal-first
+            # behavior of webhook.async_generate_url() would produce an
+            # unreachable local IP for that backend to call back to.
+            base_url = get_url(hass, allow_internal=True, prefer_external=True)
+        except NoURLAvailableError:
+            _LOGGER.warning(
+                "No usable Home Assistant URL configured (Settings > System > "
+                "Network) - cannot register the Aisle 5 webhook, falling back "
+                "to polling only"
+            )
+            return
+        webhook_url = f"{base_url}/api/webhook/{webhook_id}"
         client: Aisle5Client = hass.data[DOMAIN][entry.entry_id]["client"]
         try:
             result = await client.async_register_webhook(webhook_url)
