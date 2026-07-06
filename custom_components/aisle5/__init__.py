@@ -154,36 +154,44 @@ async def _async_ensure_zones(
 async def _async_setup_webhook(
     hass: HomeAssistant, entry: ConfigEntry, coordinator: Aisle5Coordinator
 ) -> None:
-    """Registers this HA instance's webhook with the backend (once) and listens for pushes."""
-    webhook_id = entry.data.get(CONF_WEBHOOK_ID)
-    secret = entry.data.get(CONF_WEBHOOK_SECRET)
+    """Registers this HA instance's webhook with the backend and listens for pushes.
 
-    if not webhook_id:
-        webhook_id = webhook.async_generate_id()
-        try:
-            # Prefer the externally configured URL: the Aisle 5 backend is
-            # commonly hosted elsewhere (its own server/VM), not necessarily
-            # on the same LAN as Home Assistant, so the default internal-first
-            # behavior of webhook.async_generate_url() would produce an
-            # unreachable local IP for that backend to call back to.
-            base_url = get_url(hass, allow_internal=True, prefer_external=True)
-        except NoURLAvailableError:
-            _LOGGER.warning(
-                "No usable Home Assistant URL configured (Settings > System > "
-                "Network) - cannot register the Aisle 5 webhook, falling back "
-                "to polling only"
-            )
-            return
-        webhook_url = f"{base_url}/api/webhook/{webhook_id}"
-        client: Aisle5Client = hass.data[DOMAIN][entry.entry_id]["client"]
-        try:
-            result = await client.async_register_webhook(webhook_url)
-        except Aisle5ApiError as err:
-            _LOGGER.warning(
-                "Could not register the Aisle 5 webhook (falling back to polling only): %s", err
-            )
-            return
-        secret = result["secret"]
+    Re-registers on every setup (not just the first time): the backend
+    upserts by URL, so this is cheap and self-healing - if the app-side
+    subscription was ever deleted (e.g. via the Settings UI) or the URL
+    changes (e.g. after fixing internal-vs-external resolution), the next
+    restart re-establishes it automatically instead of requiring the user
+    to manually re-pair anything.
+    """
+    webhook_id = entry.data.get(CONF_WEBHOOK_ID) or webhook.async_generate_id()
+
+    try:
+        # Prefer the externally configured URL: the Aisle 5 backend is
+        # commonly hosted elsewhere (its own server/VM), not necessarily
+        # on the same LAN as Home Assistant, so the default internal-first
+        # behavior of webhook.async_generate_url() would produce an
+        # unreachable local IP for that backend to call back to.
+        base_url = get_url(hass, allow_internal=True, prefer_external=True)
+    except NoURLAvailableError:
+        _LOGGER.warning(
+            "No usable Home Assistant URL configured (Settings > System > "
+            "Network) - cannot register the Aisle 5 webhook, falling back "
+            "to polling only"
+        )
+        return
+
+    webhook_url = f"{base_url}/api/webhook/{webhook_id}"
+    client: Aisle5Client = hass.data[DOMAIN][entry.entry_id]["client"]
+    try:
+        result = await client.async_register_webhook(webhook_url)
+    except Aisle5ApiError as err:
+        _LOGGER.warning(
+            "Could not register the Aisle 5 webhook (falling back to polling only): %s", err
+        )
+        return
+
+    secret = result["secret"]
+    if entry.data.get(CONF_WEBHOOK_ID) != webhook_id or entry.data.get(CONF_WEBHOOK_SECRET) != secret:
         hass.config_entries.async_update_entry(
             entry,
             data={**entry.data, CONF_WEBHOOK_ID: webhook_id, CONF_WEBHOOK_SECRET: secret},
