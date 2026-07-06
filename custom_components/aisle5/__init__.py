@@ -12,6 +12,7 @@ from homeassistant.components.zone import DOMAIN as ZONE_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import slugify
 
@@ -21,6 +22,8 @@ from .const import (
     CONF_BASE_URL,
     CONF_WEBHOOK_ID,
     CONF_WEBHOOK_SECRET,
+    CONF_ZONE_ENTRIES,
+    CONF_ZONE_RADIUS,
     DEFAULT_ZONE_RADIUS,
     DOMAIN,
 )
@@ -42,7 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
     }
 
-    await _async_ensure_zones(hass, coordinator.data)
+    await _async_ensure_zones(hass, entry, coordinator.data)
     await _async_setup_webhook(hass, entry, coordinator)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -66,8 +69,10 @@ async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def _async_ensure_zones(hass: HomeAssistant, stores: dict[int, dict]) -> None:
-    """Creates one HA zone per store that has coordinates, unless it already exists.
+async def _async_ensure_zones(
+    hass: HomeAssistant, entry: ConfigEntry, stores: dict[int, dict]
+) -> None:
+    """Creates or updates one HA zone per store that has coordinates.
 
     Reuses the zone integration's own schema-based config flow (the same one
     behind Settings > Areas & Zones > Add Zone) instead of writing to the
@@ -75,31 +80,69 @@ async def _async_ensure_zones(hass: HomeAssistant, stores: dict[int, dict]) -> N
     config flow only defines a "user" step (no "import" step); passing the
     full data set on init still skips the interactive form as long as it
     validates against the zone schema.
+
+    The entry_id of each zone we create is tracked in our own config entry's
+    data (CONF_ZONE_ENTRIES), so a later sync (e.g. after the radius option
+    changes, or a store's coordinates change) updates the existing zone in
+    place instead of only ever creating it once.
     """
-    for store in stores.values():
+    radius = entry.options.get(CONF_ZONE_RADIUS, DEFAULT_ZONE_RADIUS)
+    zone_entries: dict[str, str] = dict(entry.data.get(CONF_ZONE_ENTRIES, {}))
+    changed = False
+
+    for store_id, store in stores.items():
         latitude, longitude = store.get("latitude"), store.get("longitude")
         if latitude is None or longitude is None:
             continue
 
-        entity_id = f"zone.{slugify(store['name'])}"
-        if hass.states.get(entity_id):
-            continue
+        store_key = str(store_id)
+        zone_data = {
+            "name": store["name"],
+            "latitude": latitude,
+            "longitude": longitude,
+            "radius": radius,
+            "icon": "mdi:cart",
+            "passive": False,
+        }
+
+        tracked_entry_id = zone_entries.get(store_key)
+        zone_entry = (
+            hass.config_entries.async_get_entry(tracked_entry_id) if tracked_entry_id else None
+        )
 
         try:
-            await hass.config_entries.flow.async_init(
+            if zone_entry is not None:
+                if zone_entry.data != zone_data:
+                    hass.config_entries.async_update_entry(zone_entry, data=zone_data)
+                    await hass.config_entries.async_reload(zone_entry.entry_id)
+                continue
+
+            entity_id = f"zone.{slugify(store['name'])}"
+            if hass.states.get(entity_id):
+                # A zone with this name already exists and we don't own it
+                # (e.g. created manually) - don't create a duplicate.
+                continue
+
+            result = await hass.config_entries.flow.async_init(
                 ZONE_DOMAIN,
                 context={"source": config_entries.SOURCE_USER},
-                data={
-                    "name": store["name"],
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "radius": DEFAULT_ZONE_RADIUS,
-                    "icon": "mdi:cart",
-                    "passive": False,
-                },
+                data=zone_data,
             )
+            if result.get("type") == FlowResultType.CREATE_ENTRY:
+                zone_entries[store_key] = result["result"].entry_id
+                changed = True
         except Exception as err:  # noqa: BLE001 - a single bad store must not block setup
-            _LOGGER.warning("Could not create zone for store '%s': %s", store["name"], err)
+            _LOGGER.warning(
+                "Could not create/update zone for store '%s': %s", store["name"], err
+            )
+
+    if changed:
+        # Triggers our own update listener (_async_reload_entry) once more, causing
+        # a single extra reload right after setup - harmless, since the second pass
+        # finds every store already tracked and does nothing further.
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_ZONE_ENTRIES: zone_entries}
+        )
 
 
 async def _async_setup_webhook(

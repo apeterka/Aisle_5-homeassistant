@@ -24,6 +24,10 @@ Custom Component, das Läden, Listen und Öffnungszeiten aus [Aisle 5](https://g
 
 Beim ersten Sync werden automatisch Zonen für alle Läden mit hinterlegten Koordinaten angelegt (Standard-Radius 150 m) und pro Laden eine `todo`-Liste erstellt. Die Integration registriert außerdem automatisch einen Webhook in Aisle 5, sodass Änderungen (Artikel hinzugefügt/abgehakt) sofort statt erst beim nächsten 15-Minuten-Poll ankommen.
 
+### Zonen-Radius anpassen
+
+Über **Einstellungen → Geräte & Dienste → Aisle 5 → Konfigurieren** lässt sich der Radius (in Metern) für alle automatisch angelegten Zonen ändern. Bereits bestehende Zonen werden dabei aktualisiert, nicht dupliziert.
+
 ## Erinnerungs-Automatisierung
 
 Sobald Zonen und `todo`-Listen existieren, kann pro Laden eine Automatisierung eingerichtet werden: Zonen-Enter-Trigger auf der eigenen `person`-Entity + Bedingung „`todo`-Liste nicht leer" + Benachrichtigung.

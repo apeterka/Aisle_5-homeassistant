@@ -17,5 +17,16 @@
     "abort": {
       "already_configured": "Diese Aisle-5-Instanz ist bereits eingerichtet."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Aisle 5 Einstellungen",
+        "description": "Radius der automatisch angelegten Zonen um jeden Laden.",
+        "data": {
+          "zone_radius": "Zonen-Radius (Meter)"
+        }
+      }
+    }
   }
 }

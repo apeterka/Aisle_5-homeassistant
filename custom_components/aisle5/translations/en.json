@@ -17,5 +17,16 @@
     "abort": {
       "already_configured": "This Aisle 5 instance is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Aisle 5 Settings",
+        "description": "Radius of the zones automatically created around each store.",
+        "data": {
+          "zone_radius": "Zone radius (meters)"
+        }
+      }
+    }
   }
 }
