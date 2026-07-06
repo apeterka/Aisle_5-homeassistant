@@ -69,9 +69,12 @@ async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def _async_ensure_zones(hass: HomeAssistant, stores: dict[int, dict]) -> None:
     """Creates one HA zone per store that has coordinates, unless it already exists.
 
-    Reuses the zone integration's own config-flow import path (the same one it
-    uses for YAML-defined zones) instead of writing to the entity registry
-    directly, so zones stay fully native/editable via Settings > Areas & Zones.
+    Reuses the zone integration's own schema-based config flow (the same one
+    behind Settings > Areas & Zones > Add Zone) instead of writing to the
+    entity registry directly, so zones stay fully native/editable. Zone's
+    config flow only defines a "user" step (no "import" step); passing the
+    full data set on init still skips the interactive form as long as it
+    validates against the zone schema.
     """
     for store in stores.values():
         latitude, longitude = store.get("latitude"), store.get("longitude")
@@ -82,18 +85,21 @@ async def _async_ensure_zones(hass: HomeAssistant, stores: dict[int, dict]) -> N
         if hass.states.get(entity_id):
             continue
 
-        await hass.config_entries.flow.async_init(
-            ZONE_DOMAIN,
-            context={"source": config_entries.SOURCE_IMPORT},
-            data={
-                "name": store["name"],
-                "latitude": latitude,
-                "longitude": longitude,
-                "radius": DEFAULT_ZONE_RADIUS,
-                "icon": "mdi:cart",
-                "passive": False,
-            },
-        )
+        try:
+            await hass.config_entries.flow.async_init(
+                ZONE_DOMAIN,
+                context={"source": config_entries.SOURCE_USER},
+                data={
+                    "name": store["name"],
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "radius": DEFAULT_ZONE_RADIUS,
+                    "icon": "mdi:cart",
+                    "passive": False,
+                },
+            )
+        except Exception as err:  # noqa: BLE001 - a single bad store must not block setup
+            _LOGGER.warning("Could not create zone for store '%s': %s", store["name"], err)
 
 
 async def _async_setup_webhook(
