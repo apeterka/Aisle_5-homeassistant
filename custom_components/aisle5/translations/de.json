@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit Aisle 5 verbinden",
+        "description": "Erzeuge einen API-Key in Aisle 5 unter Einstellungen > Home Assistant und trage ihn hier zusammen mit der Backend-Adresse ein.",
+        "data": {
+          "base_url": "Aisle-5-Adresse (Docker/Produktiv: http://<vm-ip> über Port 80/443; lokale Entwicklung: http://localhost:3001). NICHT Port 3001 direkt in Produktivumgebungen verwenden.",
+          "api_key": "API-Key"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung fehlgeschlagen. Bitte URL und API-Key prüfen.",
+      "unknown": "Unerwarteter Fehler."
+    },
+    "abort": {
+      "already_configured": "Diese Aisle-5-Instanz ist bereits eingerichtet."
+    }
+  }
+}

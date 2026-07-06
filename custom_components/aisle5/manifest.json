@@ -1,0 +1,12 @@
+{
+  "domain": "aisle5",
+  "name": "Aisle 5",
+  "codeowners": ["@apeterka"],
+  "config_flow": true,
+  "documentation": "https://github.com/apeterka/Aisle_5-homeassistant",
+  "issue_tracker": "https://github.com/apeterka/Aisle_5-homeassistant/issues",
+  "iot_class": "cloud_push",
+  "integration_type": "hub",
+  "requirements": [],
+  "version": "0.1.0"
+}
