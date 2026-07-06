@@ -90,6 +90,13 @@ async def _async_ensure_zones(
     zone_entries: dict[str, str] = dict(entry.data.get(CONF_ZONE_ENTRIES, {}))
     changed = False
 
+    stores_with_coords = [
+        s for s in stores.values() if s.get("latitude") is not None and s.get("longitude") is not None
+    ]
+    _LOGGER.info(
+        "Aisle 5 zone sync: %d/%d stores have coordinates", len(stores_with_coords), len(stores)
+    )
+
     for store_id, store in stores.items():
         latitude, longitude = store.get("latitude"), store.get("longitude")
         if latitude is None or longitude is None:
@@ -115,12 +122,18 @@ async def _async_ensure_zones(
                 if zone_entry.data != zone_data:
                     hass.config_entries.async_update_entry(zone_entry, data=zone_data)
                     await hass.config_entries.async_reload(zone_entry.entry_id)
+                    _LOGGER.debug("Updated existing zone for store '%s'", store["name"])
                 continue
 
             entity_id = f"zone.{slugify(store['name'])}"
             if hass.states.get(entity_id):
                 # A zone with this name already exists and we don't own it
                 # (e.g. created manually) - don't create a duplicate.
+                _LOGGER.warning(
+                    "Zone entity '%s' already exists but isn't tracked by Aisle 5 - "
+                    "skipping to avoid a duplicate (rename it or the store to resolve)",
+                    entity_id,
+                )
                 continue
 
             result = await hass.config_entries.flow.async_init(
@@ -131,6 +144,15 @@ async def _async_ensure_zones(
             if result.get("type") == FlowResultType.CREATE_ENTRY:
                 zone_entries[store_key] = result["result"].entry_id
                 changed = True
+                _LOGGER.debug("Created zone for store '%s'", store["name"])
+            else:
+                _LOGGER.warning(
+                    "Zone creation for store '%s' did not complete as expected "
+                    "(flow result type: %s, errors: %s) - no zone was created",
+                    store["name"],
+                    result.get("type"),
+                    result.get("errors"),
+                )
         except Exception as err:  # noqa: BLE001 - a single bad store must not block setup
             _LOGGER.warning(
                 "Could not create/update zone for store '%s': %s", store["name"], err
