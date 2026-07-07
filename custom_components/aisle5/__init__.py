@@ -80,9 +80,17 @@ async def _async_ensure_zones(
     the zone integration has set itself up.
 
     The collection item id of each zone we create is tracked in our own
-    config entry's data (CONF_ZONE_ENTRIES), so a later sync (e.g. after the
-    radius option changes, or a store's coordinates change) updates the
-    existing zone in place instead of only ever creating it once.
+    config entry's data (CONF_ZONE_ENTRIES), so a later sync (e.g. after a
+    store's coordinates or name change) updates the existing zone in place
+    instead of only ever creating it once.
+
+    Radius, icon and "passive" are only ever set at creation time. Users
+    routinely need a bigger radius for stores they drive past (to cover the
+    street) than for ones they walk past, and adjust that manually on the
+    zone map - a later sync must never stomp on that by reapplying the
+    globally configured default radius. Only name/coordinates (which
+    reflect Aisle 5 as the source of truth for the store itself) are kept
+    in sync on every run.
     """
     zone_collection = hass.data.get(ZONE_DOMAIN)
     if zone_collection is None:
@@ -106,13 +114,11 @@ async def _async_ensure_zones(
             continue
 
         store_key = str(store_id)
-        zone_data = {
+        # Synced on every run - Aisle 5 is the source of truth for these.
+        sync_fields = {
             "name": store["name"],
             "latitude": latitude,
             "longitude": longitude,
-            "radius": radius,
-            "icon": "mdi:cart",
-            "passive": False,
         }
 
         tracked_item_id = zone_entries.get(store_key)
@@ -120,8 +126,8 @@ async def _async_ensure_zones(
         try:
             if tracked_item_id is not None and tracked_item_id in zone_collection.data:
                 existing = zone_collection.data[tracked_item_id]
-                if any(existing.get(key) != value for key, value in zone_data.items()):
-                    await zone_collection.async_update_item(tracked_item_id, zone_data)
+                if any(existing.get(key) != value for key, value in sync_fields.items()):
+                    await zone_collection.async_update_item(tracked_item_id, sync_fields)
                     _LOGGER.debug("Updated existing zone for store '%s'", store["name"])
                 continue
 
@@ -136,7 +142,10 @@ async def _async_ensure_zones(
                 )
                 continue
 
-            new_item = await zone_collection.async_create_item(zone_data)
+            # Only used for the initial creation - see docstring above.
+            new_item = await zone_collection.async_create_item(
+                {**sync_fields, "radius": radius, "icon": "mdi:cart", "passive": False}
+            )
             zone_entries[store_key] = new_item["id"]
             changed = True
             _LOGGER.debug("Created zone for store '%s'", store["name"])

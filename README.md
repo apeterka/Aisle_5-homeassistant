@@ -26,7 +26,7 @@ Beim ersten Sync werden automatisch Zonen für alle Läden mit hinterlegten Koor
 
 ### Zonen-Radius anpassen
 
-Über **Einstellungen → Geräte & Dienste → Aisle 5 → Konfigurieren** lässt sich der Radius (in Metern) für alle automatisch angelegten Zonen ändern. Bereits bestehende Zonen werden dabei aktualisiert, nicht dupliziert.
+Über **Einstellungen → Geräte & Dienste → Aisle 5 → Konfigurieren** lässt sich der Standard-Radius (in Metern) für **neu** angelegte Zonen ändern. Bereits bestehende Zonen sind davon **nicht** betroffen: Radius, Icon und "passiv"-Flag werden nach der Erstanlage nie wieder von der Integration überschrieben. Du kannst den Radius jeder Zone daher jederzeit individuell auf der Karte (**Einstellungen → Bereiche, Zonen & Beschriftungen → Zonen**) anpassen – praktisch z. B. für Läden, an denen du mit dem Auto vorbeifährst und der Radius die Straße mit einschließen soll, während er bei Läden zu Fuß klein bleiben kann. Name und Koordinaten werden bei jedem Sync weiterhin aus Aisle 5 übernommen (falls sich der Laden umbenennt oder die Adresse korrigiert wird).
 
 ## Erinnerungs-Automatisierung
 
